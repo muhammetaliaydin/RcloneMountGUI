@@ -1,9 +1,10 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using System;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
-using System.Net;
-using System.Security.Cryptography;
+using System.Net.Http;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 namespace RcloneMountGUI
@@ -15,21 +16,28 @@ namespace RcloneMountGUI
             InitializeComponent();
             TrayMenuContext();
 
-            // Default selection
-            comboBoxMount.Text = "--vfs-cache-mode writes";
+            // Default selections
+            populateDriveLetters();
+            comboBoxMount.SelectedIndex = 2;
 
             try
             {
-                RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true);
+                RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", false);
 
-                if (key.GetValue("RcloneMountGUI").ToString() == "\"" + Application.ExecutablePath + "\"" + " -tray")
+                if (key != null && key.GetValue("RcloneMountGUI") != null)
                 {
-                    checkBoxRAAS.Checked = true;
+                    string regValue = key.GetValue("RcloneMountGUI").ToString();
+                    if (regValue == "\"" + Application.ExecutablePath + "\"" + " -tray")
+                    {
+                        checkBoxRAAS.Checked = true;
+                    }
                 }
             }
             catch { }
 
             loadSettings();
+            loadTheme();
+            updateStatusLabel(false);
         }
 
         string[] args = Environment.GetCommandLineArgs();
@@ -37,6 +45,28 @@ namespace RcloneMountGUI
         #region Variables
 
         string rclonePath, rcloneFileName;
+        bool isDarkMode;
+
+        // GitHub repository for updates
+        const string GitHubOwner = "muhammetaliaydin";
+        const string GitHubRepo = "RcloneMountGUI";
+        const string CurrentVersion = "2.0.0";
+
+        // Theme colors
+        static readonly Color DarkBackground = Color.FromArgb(30, 30, 46);
+        static readonly Color DarkSurface = Color.FromArgb(45, 45, 65);
+        static readonly Color DarkForeground = Color.FromArgb(205, 214, 244);
+        static readonly Color DarkAccent = Color.FromArgb(137, 180, 250);
+        static readonly Color DarkBorder = Color.FromArgb(88, 91, 112);
+
+        static readonly Color LightBackground = Color.FromArgb(239, 241, 245);
+        static readonly Color LightSurface = Color.White;
+        static readonly Color LightForeground = Color.FromArgb(30, 30, 46);
+        static readonly Color LightAccent = Color.FromArgb(30, 102, 245);
+        static readonly Color LightBorder = Color.FromArgb(172, 176, 190);
+
+        static readonly Color MountedColor = Color.FromArgb(64, 190, 100);
+        static readonly Color UnmountedColor = Color.FromArgb(180, 180, 190);
 
         #endregion
 
@@ -52,7 +82,7 @@ namespace RcloneMountGUI
             {
                 try
                 {
-                    if (!String.IsNullOrEmpty(key.GetValue("RcloneLocation").ToString()))
+                    if (!String.IsNullOrEmpty(key.GetValue("RcloneLocation")?.ToString()))
                     {
                         txtRLocation.Text = key.GetValue("RcloneLocation").ToString();
 
@@ -64,7 +94,7 @@ namespace RcloneMountGUI
 
                 try
                 {
-                    if (!String.IsNullOrEmpty(key.GetValue("RemoteName").ToString()))
+                    if (!String.IsNullOrEmpty(key.GetValue("RemoteName")?.ToString()))
                     {
                         txtRemoteName.Text = key.GetValue("RemoteName").ToString();
                     }
@@ -73,23 +103,195 @@ namespace RcloneMountGUI
 
                 try
                 {
-                    if (!String.IsNullOrEmpty(key.GetValue("DriveLetter").ToString()))
+                    string savedLetter = key.GetValue("DriveLetter")?.ToString();
+                    if (!String.IsNullOrEmpty(savedLetter))
                     {
-                        txtDriveLetter.Text = key.GetValue("DriveLetter").ToString();
+                        int index = txtDriveLetter.FindStringExact(savedLetter);
+                        if (index >= 0)
+                            txtDriveLetter.SelectedIndex = index;
                     }
                 }
                 catch { }
+
                 try
                 {
-                    if (!String.IsNullOrEmpty(key.GetValue("MountOptions").ToString()))
+                    string savedOption = key.GetValue("MountOptions")?.ToString();
+                    if (!String.IsNullOrEmpty(savedOption))
                     {
-                        comboBoxMount.Text = key.GetValue("MountOptions").ToString();
+                        int index = comboBoxMount.FindStringExact(savedOption);
+                        if (index >= 0)
+                            comboBoxMount.SelectedIndex = index;
                     }
                 }
                 catch { }
             }
             else
                 Registry.CurrentUser.CreateSubKey("SOFTWARE\\RcloneMountGUI");
+        }
+
+        private void populateDriveLetters()
+        {
+            // Populates the drive letter combo with available (unused) letters A-Z
+
+            txtDriveLetter.Items.Clear();
+
+            string[] usedDrives = Environment.GetLogicalDrives();
+
+            for (char letter = 'A'; letter <= 'Z'; letter++)
+            {
+                string drive = letter + ":\\";
+                bool inUse = false;
+
+                foreach (string used in usedDrives)
+                {
+                    if (used.Equals(drive, StringComparison.OrdinalIgnoreCase))
+                    {
+                        inUse = true;
+                        break;
+                    }
+                }
+
+                if (!inUse)
+                    txtDriveLetter.Items.Add(letter.ToString());
+            }
+
+            // Default to last available letter
+            if (txtDriveLetter.Items.Count > 0)
+                txtDriveLetter.SelectedIndex = txtDriveLetter.Items.Count - 1;
+        }
+
+        private void loadTheme()
+        {
+            // Loads theme preference from registry, defaults to system setting
+
+            RegistryKey key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\RcloneMountGUI", false);
+
+            if (key != null && key.GetValue("DarkMode") != null)
+            {
+                isDarkMode = key.GetValue("DarkMode").ToString() == "1";
+            }
+            else
+            {
+                // Detect Windows system theme
+                isDarkMode = isWindowsDarkMode();
+            }
+
+            checkBoxDarkMode.Checked = isDarkMode;
+            applyTheme();
+        }
+
+        private bool isWindowsDarkMode()
+        {
+            // Checks if Windows is using dark mode
+            try
+            {
+                RegistryKey key = Registry.CurrentUser.OpenSubKey(
+                    @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", false);
+
+                if (key != null)
+                {
+                    object value = key.GetValue("AppsUseLightTheme");
+                    if (value != null)
+                        return (int)value == 0;
+                }
+            }
+            catch { }
+
+            return false;
+        }
+
+        private void applyTheme()
+        {
+            // Applies dark or light theme to all controls
+
+            Color bg = isDarkMode ? DarkBackground : LightBackground;
+            Color surface = isDarkMode ? DarkSurface : LightSurface;
+            Color fg = isDarkMode ? DarkForeground : LightForeground;
+            Color accent = isDarkMode ? DarkAccent : LightAccent;
+            Color border = isDarkMode ? DarkBorder : LightBorder;
+
+            this.BackColor = bg;
+            this.ForeColor = fg;
+
+            // Text boxes
+            txtRLocation.BackColor = surface;
+            txtRLocation.ForeColor = fg;
+            txtRLocation.BorderStyle = BorderStyle.FixedSingle;
+
+            txtRemoteName.BackColor = surface;
+            txtRemoteName.ForeColor = fg;
+            txtRemoteName.BorderStyle = BorderStyle.FixedSingle;
+
+            txtDriveLetter.BackColor = surface;
+            txtDriveLetter.ForeColor = fg;
+
+            // Combo box
+            comboBoxMount.BackColor = surface;
+            comboBoxMount.ForeColor = fg;
+
+            // Buttons
+            applyButtonTheme(btnSelect, fg, bg, border);
+            applyButtonTheme(btnConfig, fg, bg, border);
+            applyButtonTheme(btnMount, accent, isDarkMode ? DarkBackground : Color.White, accent);
+            applyButtonTheme(btnUnmount, fg, bg, border);
+
+            // Labels
+            lblRcloneLocation.ForeColor = fg;
+            lblRemoteName.ForeColor = fg;
+            lblDriveLetter.ForeColor = fg;
+            lblMountOptions.ForeColor = fg;
+            lblStatus.ForeColor = fg;
+
+            // Link label
+            linklblDocument.LinkColor = accent;
+            linklblDocument.ActiveLinkColor = accent;
+
+            // Checkboxes
+            checkBoxRAAS.ForeColor = fg;
+            checkBoxDarkMode.ForeColor = fg;
+        }
+
+        private void applyButtonTheme(Button btn, Color fg, Color bg, Color border)
+        {
+            btn.ForeColor = fg;
+            btn.BackColor = bg;
+            btn.FlatAppearance.BorderColor = border;
+            btn.FlatAppearance.MouseOverBackColor = isDarkMode ? DarkSurface : Color.FromArgb(220, 224, 232);
+        }
+
+        private void updateStatusLabel(bool mounted)
+        {
+            // Updates the mount status indicator
+
+            if (mounted)
+            {
+                lblStatus.Text = "Mounted";
+                lblStatus.ForeColor = MountedColor;
+                panelStatus.BackColor = MountedColor;
+            }
+            else
+            {
+                lblStatus.Text = "Not Mounted";
+                lblStatus.ForeColor = UnmountedColor;
+                panelStatus.BackColor = UnmountedColor;
+            }
+
+            // Position the dot right next to the text
+            int textWidth = TextRenderer.MeasureText(lblStatus.Text, lblStatus.Font).Width;
+            int dotX = lblStatus.Right - textWidth - panelStatus.Width - 4;
+            int dotY = lblStatus.Top + (lblStatus.Height - panelStatus.Height) / 2;
+            panelStatus.Location = new System.Drawing.Point(dotX, dotY);
+        }
+
+        private bool isRcloneRunning()
+        {
+            // Checks if rclone process is running
+
+            if (String.IsNullOrEmpty(rcloneFileName))
+                return false;
+
+            Process[] processes = Process.GetProcessesByName(rcloneFileName);
+            return processes.Length > 0;
         }
 
         private void runTray()
@@ -116,30 +318,51 @@ namespace RcloneMountGUI
             System.Threading.Thread.Sleep(1000);
 
             // Check if mounted
-            if (this.WindowState != FormWindowState.Minimized)
+            if (isRcloneRunning())
             {
-                Process[] processes = Process.GetProcesses();
-                foreach (Process process2 in processes)
+                updateStatusLabel(true);
+
+                if (this.WindowState != FormWindowState.Minimized)
                 {
-                    if (process2.ProcessName == rcloneFileName)
-                    {
-                        MessageBox.Show("Mounted successfully.", "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    }
+                    MessageBox.Show("Mounted successfully.", "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+            }
+            else
+            {
+                updateStatusLabel(false);
+
+                if (this.WindowState != FormWindowState.Minimized)
+                {
+                    MessageBox.Show("Mount failed. Check your settings.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
         }
 
-        private void RcloneKill()
+        private void RcloneKill(bool silent = false)
         {
-            // Kills the process
-            Process[] processes = Process.GetProcesses();
-            foreach (Process process in processes)
+            // Kills the rclone process
+
+            if (String.IsNullOrEmpty(rcloneFileName))
+                return;
+
+            Process[] processes = Process.GetProcessesByName(rcloneFileName);
+
+            if (processes.Length > 0)
             {
-                if (process.ProcessName == rcloneFileName)
+                foreach (Process process in processes)
                 {
-                    process.Kill();
-                    MessageBox.Show("Unmounted successfully.", "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    try { process.Kill(); }
+                    catch { }
                 }
+
+                updateStatusLabel(false);
+
+                if (!silent)
+                    MessageBox.Show("Unmounted successfully.", "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            else if (!silent)
+            {
+                MessageBox.Show("No mounted drive found.", "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
 
@@ -150,76 +373,132 @@ namespace RcloneMountGUI
             this.notifyIconRclone.ContextMenuStrip.Items.Add("Exit", null, this.Exit_Click);
         }
 
-        private string calculateMd5(string file)
+        private void checkForUpdate()
         {
-            // Calculates the md5 code of the file
-            using (var md5Instance = MD5.Create())
+            // Checks GitHub releases for a newer version
+
+            try
             {
-                using (var stream = File.OpenRead(file))
+                using (HttpClient client = new HttpClient())
                 {
-                    var hashResult = md5Instance.ComputeHash(stream);
-                    return BitConverter.ToString(hashResult).Replace("-", "").ToLowerInvariant();
+                    client.DefaultRequestHeaders.Add("User-Agent", "RcloneMountGUI");
+                    client.Timeout = TimeSpan.FromSeconds(10);
+
+                    string url = "https://api.github.com/repos/" + GitHubOwner + "/" + GitHubRepo + "/releases/latest";
+                    string response = client.GetStringAsync(url).Result;
+
+                    // Simple JSON parsing for tag_name
+                    string latestVersion = parseJsonValue(response, "tag_name");
+
+                    if (!String.IsNullOrEmpty(latestVersion))
+                    {
+                        // Remove 'v' prefix if present
+                        latestVersion = latestVersion.TrimStart('v');
+
+                        if (isNewerVersion(latestVersion, CurrentVersion))
+                        {
+                            // Find download URL for the exe asset
+                            string downloadUrl = parseDownloadUrl(response);
+
+                            if (MessageBox.Show(
+                                "A new version (v" + latestVersion + ") is available.\nCurrent version: v" + CurrentVersion + "\n\nWould you like to update?",
+                                "Rclone Mount Update",
+                                MessageBoxButtons.YesNo,
+                                MessageBoxIcon.Information) == DialogResult.Yes)
+                            {
+                                if (!String.IsNullOrEmpty(downloadUrl))
+                                {
+                                    updateApp(downloadUrl);
+                                    Application.Restart();
+                                }
+                                else
+                                {
+                                    // Fallback: open releases page in browser
+                                    Process.Start("https://github.com/" + GitHubOwner + "/" + GitHubRepo + "/releases/latest");
+                                }
+                            }
+                        }
+                    }
                 }
             }
+            catch { }
         }
 
-        private bool checkNewVersion(string md5Link)
+        private bool isNewerVersion(string latest, string current)
         {
-            // Checks for a new version
-
-            WebClient client = new WebClient();
-
-            string appName = Path.GetFileName(System.Reflection.Assembly.GetEntryAssembly().Location);
-            string appCurrentVersion = calculateMd5(appName);
-
-            string latestVersion = client.DownloadString(md5Link);
-
-            if (appCurrentVersion == latestVersion || appCurrentVersion + "\n" == latestVersion)
+            // Compares version strings (e.g., "2.1.0" > "2.0.0")
+            try
             {
-                return true;
+                Version latestVer = new Version(latest);
+                Version currentVer = new Version(current);
+                return latestVer > currentVer;
             }
-            else
+            catch
             {
                 return false;
             }
         }
 
-        public void updateApp(string appLink)
+        private string parseJsonValue(string json, string key)
         {
-            // Updates the application
+            // Simple JSON value parser (avoids adding Newtonsoft dependency)
+            string pattern = "\"" + key + "\"\\s*:\\s*\"([^\"]+)\"";
+            Match match = Regex.Match(json, pattern);
+            return match.Success ? match.Groups[1].Value : null;
+        }
 
-            WebClient client = new WebClient();
+        private string parseDownloadUrl(string json)
+        {
+            // Finds the .exe download URL from GitHub release assets
+            string pattern = "\"browser_download_url\"\\s*:\\s*\"([^\"]+\\.exe)\"";
+            Match match = Regex.Match(json, pattern);
+            return match.Success ? match.Groups[1].Value : null;
+        }
 
-            string appName = Path.GetFileName(System.Reflection.Assembly.GetEntryAssembly().Location);
-            string tempFolder = Path.GetTempPath();
-            string appPath = Application.StartupPath;
-
-            client.DownloadFile(appLink, tempFolder + appName);
+        public void updateApp(string downloadUrl)
+        {
+            // Downloads and replaces the application
 
             try
             {
-                File.Move(appName, tempFolder + appName + ".bak");
-                File.Move(tempFolder + appName, appPath + "\\" + appName);
+                using (HttpClient client = new HttpClient())
+                {
+                    client.DefaultRequestHeaders.Add("User-Agent", "RcloneMountGUI");
+
+                    string appPath = Application.ExecutablePath;
+                    string appDir = Path.GetDirectoryName(appPath);
+                    string appName = Path.GetFileName(appPath);
+                    string tempPath = Path.Combine(Path.GetTempPath(), appName);
+                    string backupPath = appPath + ".bak";
+
+                    // Download new version to temp
+                    byte[] data = client.GetByteArrayAsync(downloadUrl).Result;
+                    File.WriteAllBytes(tempPath, data);
+
+                    // Backup current and replace
+                    if (File.Exists(backupPath))
+                        File.Delete(backupPath);
+
+                    File.Move(appPath, backupPath);
+                    File.Move(tempPath, appPath);
+                }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Update failed: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         public void clearOldVersion()
         {
-            string appName = Path.GetFileName(System.Reflection.Assembly.GetEntryAssembly().Location);
-            string tempFolder = Path.GetTempPath();
+            // Cleans up backup files from previous update
+            string appPath = Application.ExecutablePath;
+            string backupPath = appPath + ".bak";
 
             try
             {
-                if (File.Exists(tempFolder + appName))
-                    File.Delete(tempFolder + appName);
-            }
-            catch { }
-
-            try
-            {
-                if (File.Exists(tempFolder + appName + ".bak"))
-                    File.Delete(tempFolder + appName + ".bak");
+                if (File.Exists(backupPath))
+                    File.Delete(backupPath);
             }
             catch { }
         }
@@ -257,14 +536,7 @@ namespace RcloneMountGUI
             // If there is a new version of the application, it will ask for an update
             if (System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable())
             {
-                if (!checkNewVersion("https://raw.githubusercontent.com/ImnLu/RcloneMountGUI/master/md5"))
-                {
-                    if (MessageBox.Show("A new version of the app is available. Would you like to update?", "Rclone Mount Update", MessageBoxButtons.YesNo, MessageBoxIcon.Exclamation) == DialogResult.Yes)
-                    {
-                        updateApp("https://raw.githubusercontent.com/ImnLu/RcloneMountGUI/master/RcloneMountGUI.exe");
-                        Application.Restart();
-                    }
-                }
+                checkForUpdate();
             }
         }
 
@@ -281,7 +553,7 @@ namespace RcloneMountGUI
 
         private void btnMount_Click(object sender, EventArgs e)
         {
-            if (String.IsNullOrEmpty(txtRLocation.Text) || String.IsNullOrEmpty(txtRemoteName.Text) || String.IsNullOrEmpty(txtDriveLetter.Text))
+            if (String.IsNullOrEmpty(txtRLocation.Text) || String.IsNullOrEmpty(txtRemoteName.Text) || txtDriveLetter.SelectedItem == null)
             {
                 MessageBox.Show("Please fill in the required information.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
@@ -334,16 +606,35 @@ namespace RcloneMountGUI
         private void checkBoxRAAS_CheckedChanged(object sender, EventArgs e)
         {
             // Run automatically at startup settings
-            if (checkBoxRAAS.Checked)
+            try
             {
                 RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true);
-                key.SetValue("RcloneMountGUI", "\"" + Application.ExecutablePath + "\"" + " -tray");
+
+                if (checkBoxRAAS.Checked)
+                {
+                    key.SetValue("RcloneMountGUI", "\"" + Application.ExecutablePath + "\"" + " -tray");
+                }
+                else
+                {
+                    key.DeleteValue("RcloneMountGUI", false);
+                }
             }
-            else
+            catch { }
+        }
+
+        private void checkBoxDarkMode_CheckedChanged(object sender, EventArgs e)
+        {
+            // Saves theme preference and applies it
+            isDarkMode = checkBoxDarkMode.Checked;
+            applyTheme();
+
+            try
             {
-                RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true);
-                key.DeleteValue("RcloneMountGUI");
+                RegistryKey key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\RcloneMountGUI", true);
+                if (key != null)
+                    key.SetValue("DarkMode", isDarkMode ? "1" : "0");
             }
+            catch { }
         }
 
         private void linklblDocument_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
@@ -366,6 +657,9 @@ namespace RcloneMountGUI
             this.WindowState = FormWindowState.Normal;
             this.ShowInTaskbar = true;
             notifyIconRclone.Visible = false;
+
+            // Refresh status when restoring from tray
+            updateStatusLabel(isRcloneRunning());
         }
 
         private void Show_Click(object sender, EventArgs e)
@@ -374,18 +668,28 @@ namespace RcloneMountGUI
             this.WindowState = FormWindowState.Normal;
             this.ShowInTaskbar = true;
             notifyIconRclone.Visible = false;
+            updateStatusLabel(isRcloneRunning());
         }
 
         private void Exit_Click(object sender, EventArgs e)
         {
-            RcloneKill();
-            Application.Exit();
+            this.Close();
         }
 
-        private void RcloneMount_FormClosed(object sender, FormClosedEventArgs e)
+        private void RcloneMount_FormClosing(object sender, FormClosingEventArgs e)
         {
-            RcloneKill();
-            Application.Exit();
+            // Ask for confirmation if a remote is currently mounted
+            if (isRcloneRunning())
+            {
+                if (MessageBox.Show("A remote drive is currently mounted.\nDo you want to unmount and exit?",
+                    "Confirm Exit", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.No)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+            }
+
+            RcloneKill(true);
         }
 
         #endregion

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Windows.Forms;
 
 namespace RcloneMountGUI
@@ -7,6 +7,7 @@ namespace RcloneMountGUI
     {
         /// <summary>
         /// The main entry point for the application.
+        /// DPI awareness is handled via app.manifest and App.config
         /// </summary>
         [STAThread]
         static void Main()
