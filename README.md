@@ -11,9 +11,9 @@
 ---
 
 ### Changelog v1.1.0 to v.2.0.0
-* Fixed blurry text on high-resolution screens so the app looks crisp and clear.
+* Fixed blurry text on high resolution screens so the app looks crisp and clear.
 * Added a dark mode that syncs with Windows or can be changed manually.
-* Switched the auto-updater to safely download directly from GitHub Releases.
+* Switched the auto updater to safely download directly from GitHub Releases.
 * Changed the drive letter box to a simple dropdown that only shows available letters.
 * Added a warning popup to stop you from accidentally closing the app while a drive is mounted.
 * Polished the design with a modern font, better buttons, helpful tooltips, and a mount status indicator.
