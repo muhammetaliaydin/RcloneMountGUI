@@ -38,6 +38,7 @@ namespace RcloneMountGUI
             loadSettings();
             loadTheme();
             updateStatusLabel(false);
+            updateButtonStates(false);
         }
 
         string[] args = Environment.GetCommandLineArgs();
@@ -50,7 +51,7 @@ namespace RcloneMountGUI
         // GitHub repository for updates
         const string GitHubOwner = "muhammetaliaydin";
         const string GitHubRepo = "RcloneMountGUI";
-        const string CurrentVersion = "2.0.0";
+        const string CurrentVersion = "2.0.1";
 
         // Theme colors
         static readonly Color DarkBackground = Color.FromArgb(30, 30, 46);
@@ -283,6 +284,13 @@ namespace RcloneMountGUI
             panelStatus.Location = new System.Drawing.Point(dotX, dotY);
         }
 
+        private void updateButtonStates(bool mounted)
+        {
+            // Enables/disables mount and unmount buttons based on current state
+            btnMount.Enabled = !mounted;
+            btnUnmount.Enabled = mounted;
+        }
+
         private bool isRcloneRunning()
         {
             // Checks if rclone process is running
@@ -321,6 +329,7 @@ namespace RcloneMountGUI
             if (isRcloneRunning())
             {
                 updateStatusLabel(true);
+                updateButtonStates(true);
 
                 if (this.WindowState != FormWindowState.Minimized)
                 {
@@ -330,6 +339,7 @@ namespace RcloneMountGUI
             else
             {
                 updateStatusLabel(false);
+                updateButtonStates(false);
 
                 if (this.WindowState != FormWindowState.Minimized)
                 {
@@ -356,6 +366,7 @@ namespace RcloneMountGUI
                 }
 
                 updateStatusLabel(false);
+                updateButtonStates(false);
 
                 if (!silent)
                     MessageBox.Show("Unmounted successfully.", "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -659,7 +670,9 @@ namespace RcloneMountGUI
             notifyIconRclone.Visible = false;
 
             // Refresh status when restoring from tray
-            updateStatusLabel(isRcloneRunning());
+            bool running = isRcloneRunning();
+            updateStatusLabel(running);
+            updateButtonStates(running);
         }
 
         private void Show_Click(object sender, EventArgs e)
@@ -668,7 +681,9 @@ namespace RcloneMountGUI
             this.WindowState = FormWindowState.Normal;
             this.ShowInTaskbar = true;
             notifyIconRclone.Visible = false;
-            updateStatusLabel(isRcloneRunning());
+            bool running = isRcloneRunning();
+            updateStatusLabel(running);
+            updateButtonStates(running);
         }
 
         private void Exit_Click(object sender, EventArgs e)
