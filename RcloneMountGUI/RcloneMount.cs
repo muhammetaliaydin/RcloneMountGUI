@@ -47,6 +47,7 @@ namespace RcloneMountGUI
 
         string rclonePath, rcloneFileName;
         bool isDarkMode;
+        bool isMounted;
 
         // GitHub repository for updates
         const string GitHubOwner = "muhammetaliaydin";
@@ -254,6 +255,9 @@ namespace RcloneMountGUI
             // Checkboxes
             checkBoxRAAS.ForeColor = fg;
             checkBoxDarkMode.ForeColor = fg;
+
+            // Re-apply button enabled/disabled visuals after theme change
+            updateButtonStates(isMounted);
         }
 
         private void applyButtonTheme(Button btn, Color fg, Color bg, Color border)
@@ -290,9 +294,52 @@ namespace RcloneMountGUI
 
         private void updateButtonStates(bool mounted)
         {
-            // Enables/disables mount and unmount buttons based on current state
-            btnMount.Enabled = !mounted;
-            btnUnmount.Enabled = mounted;
+            // Visually enables/disables mount and unmount buttons based on current state.
+            // We do NOT use the Enabled property because WinForms disabled button
+            // rendering is unreadable on dark backgrounds.
+            isMounted = mounted;
+
+            Color disabledFg = isDarkMode ? Color.FromArgb(88, 91, 112) : Color.FromArgb(160, 160, 160);
+            Color disabledBorder = isDarkMode ? Color.FromArgb(55, 55, 75) : Color.FromArgb(200, 200, 200);
+            Color disabledHover = isDarkMode ? DarkBackground : LightBackground;
+            Color enabledHover = isDarkMode ? DarkSurface : Color.FromArgb(220, 224, 232);
+            Color accent = isDarkMode ? DarkAccent : LightAccent;
+            Color fg = isDarkMode ? DarkForeground : LightForeground;
+            Color bg = isDarkMode ? DarkBackground : LightBackground;
+            Color border = isDarkMode ? DarkBorder : LightBorder;
+
+            if (mounted)
+            {
+                // Mount button: disabled look
+                btnMount.ForeColor = disabledFg;
+                btnMount.BackColor = bg;
+                btnMount.FlatAppearance.BorderColor = disabledBorder;
+                btnMount.FlatAppearance.MouseOverBackColor = disabledHover;
+                btnMount.Cursor = Cursors.Default;
+
+                // Unmount button: enabled look
+                btnUnmount.ForeColor = fg;
+                btnUnmount.BackColor = bg;
+                btnUnmount.FlatAppearance.BorderColor = border;
+                btnUnmount.FlatAppearance.MouseOverBackColor = enabledHover;
+                btnUnmount.Cursor = Cursors.Hand;
+            }
+            else
+            {
+                // Mount button: enabled look (accent style)
+                btnMount.ForeColor = accent;
+                btnMount.BackColor = isDarkMode ? DarkBackground : Color.White;
+                btnMount.FlatAppearance.BorderColor = accent;
+                btnMount.FlatAppearance.MouseOverBackColor = enabledHover;
+                btnMount.Cursor = Cursors.Hand;
+
+                // Unmount button: disabled look
+                btnUnmount.ForeColor = disabledFg;
+                btnUnmount.BackColor = bg;
+                btnUnmount.FlatAppearance.BorderColor = disabledBorder;
+                btnUnmount.FlatAppearance.MouseOverBackColor = disabledHover;
+                btnUnmount.Cursor = Cursors.Default;
+            }
         }
 
         private bool isRcloneRunning()
@@ -606,6 +653,8 @@ namespace RcloneMountGUI
 
         private void btnMount_Click(object sender, EventArgs e)
         {
+            if (isMounted) return;
+
             if (String.IsNullOrEmpty(txtRLocation.Text) || String.IsNullOrEmpty(txtRemoteName.Text) || txtDriveLetter.SelectedItem == null)
             {
                 MessageBox.Show("Please fill in the required information.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -627,6 +676,8 @@ namespace RcloneMountGUI
 
         private void btnUnmount_Click(object sender, EventArgs e)
         {
+            if (!isMounted) return;
+
             RcloneKill();
         }
 
