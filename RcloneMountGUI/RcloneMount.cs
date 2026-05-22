@@ -51,7 +51,7 @@ namespace RcloneMountGUI
         // GitHub repository for updates
         const string GitHubOwner = "muhammetaliaydin";
         const string GitHubRepo = "RcloneMountGUI";
-        const string CurrentVersion = "2.0.1";
+        const string CurrentVersion = "2.1.0";
 
         // Theme colors
         static readonly Color DarkBackground = Color.FromArgb(30, 30, 46);
@@ -83,9 +83,10 @@ namespace RcloneMountGUI
             {
                 try
                 {
-                    if (!String.IsNullOrEmpty(key.GetValue("RcloneLocation")?.ToString()))
+                    object rcloneLocVal = key.GetValue("RcloneLocation");
+                    if (rcloneLocVal != null && !String.IsNullOrEmpty(rcloneLocVal.ToString()))
                     {
-                        txtRLocation.Text = key.GetValue("RcloneLocation").ToString();
+                        txtRLocation.Text = rcloneLocVal.ToString();
 
                         rclonePath = Path.GetDirectoryName(txtRLocation.Text);
                         rcloneFileName = Path.GetFileNameWithoutExtension(txtRLocation.Text);
@@ -95,16 +96,18 @@ namespace RcloneMountGUI
 
                 try
                 {
-                    if (!String.IsNullOrEmpty(key.GetValue("RemoteName")?.ToString()))
+                    object remoteNameVal = key.GetValue("RemoteName");
+                    if (remoteNameVal != null && !String.IsNullOrEmpty(remoteNameVal.ToString()))
                     {
-                        txtRemoteName.Text = key.GetValue("RemoteName").ToString();
+                        txtRemoteName.Text = remoteNameVal.ToString();
                     }
                 }
                 catch { }
 
                 try
                 {
-                    string savedLetter = key.GetValue("DriveLetter")?.ToString();
+                    object savedLetterVal = key.GetValue("DriveLetter");
+                    string savedLetter = savedLetterVal != null ? savedLetterVal.ToString() : null;
                     if (!String.IsNullOrEmpty(savedLetter))
                     {
                         int index = txtDriveLetter.FindStringExact(savedLetter);
@@ -116,7 +119,8 @@ namespace RcloneMountGUI
 
                 try
                 {
-                    string savedOption = key.GetValue("MountOptions")?.ToString();
+                    object savedOptionVal = key.GetValue("MountOptions");
+                    string savedOption = savedOptionVal != null ? savedOptionVal.ToString() : null;
                     if (!String.IsNullOrEmpty(savedOption))
                     {
                         int index = comboBoxMount.FindStringExact(savedOption);
@@ -420,7 +424,6 @@ namespace RcloneMountGUI
                                 if (!String.IsNullOrEmpty(downloadUrl))
                                 {
                                     updateApp(downloadUrl);
-                                    Application.Restart();
                                 }
                                 else
                                 {
@@ -468,7 +471,8 @@ namespace RcloneMountGUI
 
         public void updateApp(string downloadUrl)
         {
-            // Downloads and replaces the application
+            // Downloads the new version and launches a batch script to replace
+            // the running exe after the application exits (avoids file-lock errors)
 
             try
             {
@@ -477,21 +481,42 @@ namespace RcloneMountGUI
                     client.DefaultRequestHeaders.Add("User-Agent", "RcloneMountGUI");
 
                     string appPath = Application.ExecutablePath;
-                    string appDir = Path.GetDirectoryName(appPath);
                     string appName = Path.GetFileName(appPath);
                     string tempPath = Path.Combine(Path.GetTempPath(), appName);
-                    string backupPath = appPath + ".bak";
+                    string batchPath = Path.Combine(Path.GetTempPath(), "RcloneMountGUI_update.bat");
 
                     // Download new version to temp
                     byte[] data = client.GetByteArrayAsync(downloadUrl).Result;
                     File.WriteAllBytes(tempPath, data);
 
-                    // Backup current and replace
-                    if (File.Exists(backupPath))
-                        File.Delete(backupPath);
+                    // Create a batch script that:
+                    //   1. Waits for the current process to exit
+                    //   2. Replaces the old exe with the new one
+                    //   3. Restarts the application
+                    //   4. Cleans up temp files and itself
+                    string batch =
+                        "@echo off\r\n" +
+                        "ping 127.0.0.1 -n 4 > nul\r\n" +
+                        "del \"" + appPath + "\"\r\n" +
+                        "copy /Y \"" + tempPath + "\" \"" + appPath + "\" > nul\r\n" +
+                        "del \"" + tempPath + "\"\r\n" +
+                        "start \"\" \"" + appPath + "\"\r\n" +
+                        "del \"%~f0\"\r\n";
 
-                    File.Move(appPath, backupPath);
-                    File.Move(tempPath, appPath);
+                    File.WriteAllText(batchPath, batch);
+
+                    // Launch the batch script hidden
+                    Process proc = new Process();
+                    proc.StartInfo.FileName = batchPath;
+                    proc.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
+                    proc.StartInfo.CreateNoWindow = true;
+                    proc.Start();
+
+                    // Exit the application so the batch script can replace the exe
+                    if (this.InvokeRequired)
+                        this.Invoke(new Action(() => Application.Exit()));
+                    else
+                        Application.Exit();
                 }
             }
             catch (Exception ex)
@@ -502,14 +527,31 @@ namespace RcloneMountGUI
 
         public void clearOldVersion()
         {
-            // Cleans up backup files from previous update
+            // Cleans up leftover files from previous updates
             string appPath = Application.ExecutablePath;
+            string appName = Path.GetFileName(appPath);
             string backupPath = appPath + ".bak";
+            string tempExe = Path.Combine(Path.GetTempPath(), appName);
+            string tempBatch = Path.Combine(Path.GetTempPath(), "RcloneMountGUI_update.bat");
 
             try
             {
                 if (File.Exists(backupPath))
                     File.Delete(backupPath);
+            }
+            catch { }
+
+            try
+            {
+                if (File.Exists(tempExe))
+                    File.Delete(tempExe);
+            }
+            catch { }
+
+            try
+            {
+                if (File.Exists(tempBatch))
+                    File.Delete(tempBatch);
             }
             catch { }
         }
