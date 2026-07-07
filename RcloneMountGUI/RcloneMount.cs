@@ -51,7 +51,7 @@ namespace RcloneMountGUI
         // GitHub repository for updates
         const string GitHubOwner = "muhammetaliaydin";
         const string GitHubRepo = "RcloneMountGUI";
-        const string CurrentVersion = "2.1.0";
+        const string CurrentVersion = "2.1.1";
 
         // Theme colors
         static readonly Color DarkBackground = Color.FromArgb(30, 30, 46);
