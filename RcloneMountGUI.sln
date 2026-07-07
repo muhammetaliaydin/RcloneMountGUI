@@ -5,6 +5,8 @@ VisualStudioVersion = 17.2.32630.192
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RcloneMountGUI", "RcloneMountGUI\RcloneMountGUI.csproj", "{FD25CD0A-FB03-4A6A-A19B-AB602604CC20}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RcloneMountGUI.Tests", "RcloneMountGUI.Tests\RcloneMountGUI.Tests.csproj", "{5D2085B0-4EF8-4F75-891D-022AE0585D85}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{FD25CD0A-FB03-4A6A-A19B-AB602604CC20}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FD25CD0A-FB03-4A6A-A19B-AB602604CC20}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FD25CD0A-FB03-4A6A-A19B-AB602604CC20}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5D2085B0-4EF8-4F75-891D-022AE0585D85}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5D2085B0-4EF8-4F75-891D-022AE0585D85}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5D2085B0-4EF8-4F75-891D-022AE0585D85}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5D2085B0-4EF8-4F75-891D-022AE0585D85}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

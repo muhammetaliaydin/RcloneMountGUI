@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Net.Http;
-using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 namespace RcloneMountGUI
@@ -459,8 +458,9 @@ namespace RcloneMountGUI
 
                         if (isNewerVersion(latestVersion, CurrentVersion))
                         {
-                            // Find download URL for the exe asset
-                            string downloadUrl = parseDownloadUrl(response);
+                            UpdatePackage updatePackage;
+                            string updateError;
+                            bool hasUpdatePackage = UpdateSecurity.TryReadReleasePackage(response, latestVersion, out updatePackage, out updateError);
 
                             if (MessageBox.Show(
                                 "A new version (v" + latestVersion + ") is available.\nCurrent version: v" + CurrentVersion + "\n\nWould you like to update?",
@@ -468,13 +468,13 @@ namespace RcloneMountGUI
                                 MessageBoxButtons.YesNo,
                                 MessageBoxIcon.Information) == DialogResult.Yes)
                             {
-                                if (!String.IsNullOrEmpty(downloadUrl))
+                                if (hasUpdatePackage)
                                 {
-                                    updateApp(downloadUrl);
+                                    updateApp(updatePackage);
                                 }
                                 else
                                 {
-                                    // Fallback: open releases page in browser
+                                    MessageBox.Show("Automatic update is not available: " + updateError + "\n\nThe releases page will open instead.", "Update verification failed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                                     Process.Start("https://github.com/" + GitHubOwner + "/" + GitHubRepo + "/releases/latest");
                                 }
                             }
@@ -502,21 +502,24 @@ namespace RcloneMountGUI
 
         private string parseJsonValue(string json, string key)
         {
-            // Simple JSON value parser (avoids adding Newtonsoft dependency)
-            string pattern = "\"" + key + "\"\\s*:\\s*\"([^\"]+)\"";
-            Match match = Regex.Match(json, pattern);
-            return match.Success ? match.Groups[1].Value : null;
+            System.Collections.Generic.Dictionary<string, object> values;
+            try
+            {
+                values = new System.Web.Script.Serialization.JavaScriptSerializer().DeserializeObject(json) as System.Collections.Generic.Dictionary<string, object>;
+            }
+            catch
+            {
+                return null;
+            }
+
+            object value;
+            if (values == null || !values.TryGetValue(key, out value) || value == null)
+                return null;
+
+            return Convert.ToString(value);
         }
 
-        private string parseDownloadUrl(string json)
-        {
-            // Finds the .exe download URL from GitHub release assets
-            string pattern = "\"browser_download_url\"\\s*:\\s*\"([^\"]+\\.exe)\"";
-            Match match = Regex.Match(json, pattern);
-            return match.Success ? match.Groups[1].Value : null;
-        }
-
-        public void updateApp(string downloadUrl)
+        public void updateApp(UpdatePackage updatePackage)
         {
             // Downloads the new version and launches a batch script to replace
             // the running exe after the application exits (avoids file-lock errors)
@@ -532,8 +535,16 @@ namespace RcloneMountGUI
                     string tempPath = Path.Combine(Path.GetTempPath(), appName);
                     string batchPath = Path.Combine(Path.GetTempPath(), "RcloneMountGUI_update.bat");
 
-                    // Download new version to temp
-                    byte[] data = client.GetByteArrayAsync(downloadUrl).Result;
+                    string manifestJson = client.GetStringAsync(updatePackage.ManifestUrl).Result;
+                    UpdateManifest manifest;
+                    string updateError;
+                    if (!UpdateSecurity.TryReadManifest(manifestJson, out manifest, out updateError))
+                        throw new InvalidOperationException(updateError);
+
+                    byte[] data = client.GetByteArrayAsync(updatePackage.ExeUrl).Result;
+                    if (!UpdateSecurity.VerifyManifestAndPayload(manifest, updatePackage.Version, data, UpdateSecurity.UpdatePublicKeyXml, out updateError))
+                        throw new InvalidOperationException(updateError);
+
                     File.WriteAllBytes(tempPath, data);
 
                     // Create a batch script that:

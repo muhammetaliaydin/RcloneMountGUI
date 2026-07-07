@@ -225,3 +225,4 @@ node_modules/
 # Visual Studio 6 bugs (vs6 correlates ? to null)
 *.?
 *.?s
+!*.cs
